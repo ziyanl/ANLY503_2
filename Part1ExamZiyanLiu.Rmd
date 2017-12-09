@@ -1,0 +1,219 @@
+---
+title: "takehome"
+author: "Ziyan Liu"
+date: "12/4/2017"
+output:
+  html_document: 
+    smart: false
+---
+
+# EDA
+
+```{r}
+gtd <- read.csv("TerrorismDATA_Real_1970_2016.csv")
+# get subset of data relevant to the following EDA analysis
+gtdEDA <- gtd[, c("eventid", "iyear", "nperps", "nkill", "region", "region_txt", "weaptype1", "weaptype1_txt", "nhours", "nreleased")]
+```
+
+# number of terrorist attacks by year
+
+```{r}
+library(plyr)
+df1 <- count(gtdEDA, 'iyear')
+plot(df1$iyear, df1$freq, type="l", col="black", xlab="year", ylab="freq", panel.first = grid()) 
+points(df1$iyear, df1$freq, cex=0.5, pch=4, col=2)
+# remove point at year 1993, since there is no data
+points(1993, 4265.5, cex=0.5, pch=16, col="white")
+title("Number of Terrorist Attacks by Year")
+```
+
+# number of perpetrators vs. number of fatalities
+
+```{r}
+df2 <- gtdEDA[, c("nperps", "nkill")]
+df2 <- na.omit(df2)
+# remove rows containing -99, -9, 0
+df2 <- subset(df2, nperps!="-9" & nperps!="-99" & nperps!="0" & nkill!="0")
+
+par(mfrow=c(1, 2))
+plot(df2$nperps, df2$nkill, xlab="number of perpetrators", ylab="number of fatalities", 
+     cex=0.5, pch=16, col="red", panel.first = grid())
+title("Perpetrators vs. Fatalities")
+
+# keep only rows where nperps<2500 and nkill<1000
+df3 <- subset(df2, nperps<2500 & nkill<1000)
+plot(df3$nperps, df3$nkill, xlab="number of perpetrators", ylab="number of fatalities", 
+     cex=0.5, pch=16, col="red", panel.first = grid())
+title(main="Perpetrators vs. Fatalities (zoomed in)")
+```
+
+# number of fatalities by region
+
+```{r}
+df4 <- gtdEDA[, c("region", "region_txt", "nkill")]
+df4 <- na.omit(df4)
+# remove rows with 0
+df4 <- subset(df4, nkill!="0")
+
+par(mfrow=c(1, 2))
+boxplot(df4$nkill ~ df4$region_txt, las=2, ylab="number of fatalities", cex.axis=0.5, cex=0.5, 
+        col=c("darkorchid1", "goldenrod2", "darkseagreen3", "darkseagreen3", "darkslategray3", "darksalmon", "goldenrod2", "goldenrod2", "darkseagreen3", "darkseagreen3", "darksalmon", "darkslategray3"))
+title("Distribution of Fatalities by Region", cex=0.75)
+
+# nkill from 0 to 18
+boxplot(df4$nkill ~ df4$region_txt, las=2, ylab="number of fatalities", ylim=c(0, 18), cex.axis=0.5, cex=0.5,
+        col=c("darkorchid1", "goldenrod2", "darkseagreen3", "darkseagreen3", "darkslategray3", "darksalmon", "goldenrod2", "goldenrod2", "darkseagreen3", "darkseagreen3", "darksalmon", "darkslategray3"))
+title("Distribution of Fatalities by Region (zoomed in)", cex=0.75)
+```
+
+# number of fatalities by primary weapon type
+
+```{r}
+df5 <- gtdEDA[, c("weaptype1", "weaptype1_txt", "nkill")]
+df5 <- na.omit(df5)
+# remove rows with 0
+df5 <- subset(df5, nkill!="0")
+
+par(mfrow=c(1, 2))
+boxplot(df5$nkill ~ df5$weaptype1_txt, las=2, ylab="number of fatalities", 
+        main="Distribution of Fatalities by Weapon", cex.axis=0.5, cex=0.5, col="gray")
+
+# nkill from 0 to 18
+boxplot(df5$nkill ~ df5$weaptype1_txt, las=2, ylab="number of fatalities", ylim=c(0, 18),
+        main="Distribution of Fatalities by Weapon (zoomed in)", cex.axis=0.5, cex=0.5, col="gray")
+```
+
+# hours of hostage  vs. number of hostages released
+
+```{r}
+df6 <- gtdEDA[, c("nhours", "nreleased")]
+df6 <- na.omit(df6)
+# remove rows containing -99, -9, 0
+df6 <- subset(df6, nhours!="-9" & nhours!="-99" & nhours!="0" & nreleased!="-99" & nreleased!="0")
+
+par(mfrow=c(1, 2))
+plot(df6$nhours, df6$nreleased, xlab="hours of hostage", ylab="number of hostages released", 
+     cex=0.5, pch=16, col="blue", panel.first = grid())
+title("Hours of Hostage vs. Number of Hostages Released", cex.main=1)
+
+# keep only rows where nhours<100 & nreleased<500
+df7 <- subset(df6, nhours<100 & nreleased<500)
+plot(df7$nhours, df7$nreleased, xlab="hours of hostage", ylab="number of hostages released", 
+     cex=0.5, pch=16, col="blue", panel.first = grid())
+title("Hours of Hostage vs. Hostages Released (zoomed in)", cex.main=1)
+```
+
+# leaflet
+
+```{r}
+library(leaflet)
+library(sp)
+library(mapproj)
+library(maps)
+library(mapdata)
+library(maptools)
+library(htmlwidgets)
+library(magrittr)
+library(XML)
+library(plyr)
+library(rgdal)
+library(WDI)
+library(raster)
+library(noncensus)
+library(stringr)
+library(tidyr)
+library(tigris)
+library(rgeos)
+library(ggplot2)
+library(scales)
+library(data.table)
+library(htmltools)
+
+df8 <- gtd[, c("iyear", "imonth", "iday", "city", "latitude", "longitude", "attacktype1", "attacktype1_txt")]
+# remove rows with missing latitute or longitude
+df8 <- df8[complete.cases(df8[, 5:6]), ]
+
+# create labels
+info <- paste0("<strong>Date: </strong>", df8$iyear, "-", df8$imonth, "-", df8$iday, 
+                 "<br><strong>City: </strong>", df8$city, 
+                 "<br><strong>Attack Type: </strong>", df8$attacktype1_txt) %>% lapply(HTML)
+
+gmap <- leaflet(df8) %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    addCircleMarkers(~latitude, ~longitude, radius=4, label=info,
+    clusterOptions = markerClusterOptions())
+gmap
+saveWidget(gmap, 'gtd_city.html', selfcontained=FALSE)
+```
+
+# network
+
+```{r}
+library(igraph)
+
+df9 <- gtd[, c("natlty1", "natlty1_txt", "gname")]
+df9 <- na.omit(df9)
+df9["weight"] <- 1
+df9 <- df9[, c(2, 3, 4)]
+df9 <- aggregate(df9$weight, by=list(source=df9$gname, target=df9$natlty1_txt), sum)
+df9 <- df9[order(df9$source, df9$target),]
+head(df9)
+names(df9) <- c("source", "target", "weight")
+write.csv(df9, "gtd_network.csv", row.names=F)
+```
+
+```{r}
+library(igraph)
+# read in edge list
+edgeList <- read.csv("gtd_network.csv", header=T)
+colnames(edgeList) <- c("SourceName", "TargetName", "Weight")
+# remove rows containing -99, -9, 0
+edgeList <- subset(edgeList, Weight>9)
+
+# create a graph
+gD <- igraph::simplify(igraph::graph.data.frame(edgeList, directed=FALSE))
+# create a node list object
+nodeList <- data.frame(ID = c(0:(igraph::vcount(gD) - 1)), nName = igraph::V(gD)$name)
+
+# function to get node id
+getNodeID <- function(x){
+  which(x == igraph::V(gD)$name) - 1 
+}
+
+# add SourceName and TargetName
+edgeList <- plyr::ddply(edgeList, .variables = c("SourceName", "TargetName" , "Weight"), function (x) data.frame(SourceID = getNodeID(x$SourceName), TargetID = getNodeID(x$TargetName)))
+
+# calculate degree for all nodes
+nodeList <- cbind(nodeList, nodeDegree=igraph::degree(gD, v = igraph::V(gD), mode = "all"))
+
+# calculate betweenness for all nodes
+betAll <- igraph::betweenness(gD, v = igraph::V(gD), directed = FALSE) / (((igraph::vcount(gD) - 1) * (igraph::vcount(gD)-2)) / 2)
+betAll.norm <- (betAll - min(betAll))/(max(betAll) - min(betAll))
+nodeList <- cbind(nodeList, nodeBetweenness=100*betAll.norm) 
+rm(betAll, betAll.norm)
+
+# calculate Dice similarities between all pairs of nodes
+dsAll <- igraph::similarity.dice(gD, vids = igraph::V(gD), mode = "all")
+# create a data frame that contains Dice similarity
+F1 <- function(x) {data.frame(diceSim = dsAll[x$SourceID +1, x$TargetID + 1])}
+edgeList <- plyr::ddply(edgeList, .variables=c("SourceName", "TargetName", "Weight", "SourceID", "TargetID"), function(x) data.frame(F1(x)))
+rm(dsAll, F1, getNodeID, gD)
+
+# create a set of colors for each edge based on their dice similarity values
+F2 <- colorRampPalette(c("#FFFF00", "#FF0000"), bias = nrow(edgeList), space = "rgb", interpolate = "linear")
+colCodes <- F2(length(unique(edgeList$diceSim)))
+edges_col <- sapply(edgeList$diceSim, function(x) colCodes[which(sort(unique(edgeList$diceSim)) == x)])
+rm(colCodes, F2)
+
+# create a networkD3
+D3_network_LM <- networkD3::forceNetwork(Links = edgeList, Nodes = nodeList, Source = "SourceID", Target = "TargetID", Value = "Weight", NodeID = "nName", Nodesize = "nodeBetweenness", Group = "nodeDegree", height = 600, width = 1200, fontSize = 15, linkDistance = networkD3::JS("function(d) { return 10*d.value; }"), opacity = 0.65, zoom = TRUE, opacityNoHover = 0.2, linkColour = edges_col) 
+
+# plot the network
+D3_network_LM 
+
+# save the network as a html file
+networkD3::saveNetwork(D3_network_LM, "gtd_network.html", selfcontained = TRUE)
+```
+
+
+
